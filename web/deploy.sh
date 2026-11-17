@@ -61,6 +61,8 @@ cargo --version
 echo "== 5/6 后端构建并安装 =="
 cargo build --release --manifest-path web/Cargo.toml
 mkdir -p "$BIN_DIR"
+# 旧版服务还跑着旧二进制时 cp 会报 Text file busy：先停服务再覆盖（首装时服务不存在，stop 失败忽略）。
+systemctl --user stop hghub-web.service 2>/dev/null || true
 cp web/target/release/hghub-web "$BIN_DIR/hghub-web"
 chmod +x "$BIN_DIR/hghub-web"
 
