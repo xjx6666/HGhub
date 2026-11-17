@@ -76,6 +76,16 @@ else
   chmod 600 "$ENV_FILE"
   echo ">>> 沿用已有的网页版密码（未改动）。"
 fi
+# 反代后的公网源站（如 InstaBox 公网端口）：部署时以 HGHUB_WEB_PUBLIC_ORIGIN 传入，
+# 写入 env 文件供服务启动时读取，用于 m3u8 改写；不传则不写、服务按请求头现算。
+if [ -n "${HGHUB_WEB_PUBLIC_ORIGIN:-}" ]; then
+  if grep -q "^HGHUB_WEB_PUBLIC_ORIGIN=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^HGHUB_WEB_PUBLIC_ORIGIN=.*|HGHUB_WEB_PUBLIC_ORIGIN=$HGHUB_WEB_PUBLIC_ORIGIN|" "$ENV_FILE"
+  else
+    printf 'HGHUB_WEB_PUBLIC_ORIGIN=%s\n' "$HGHUB_WEB_PUBLIC_ORIGIN" >> "$ENV_FILE"
+  fi
+  echo ">>> 公网源站已写入 env：$HGHUB_WEB_PUBLIC_ORIGIN"
+fi
 
 mkdir -p "$HOME/.config/systemd/user"
 cp web/hghub-web.service "$HOME/.config/systemd/user/hghub-web.service"

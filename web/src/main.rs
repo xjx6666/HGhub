@@ -12,6 +12,9 @@
 //! * `HGHUB_WEB_BIND` (default `127.0.0.1:8900`).
 //! * `HGHUB_WEB_DATA` (default `./data`): session.json / line.json / logs.
 //! * `HGHUB_WEB_DIST` (default `./dist`): the `VITE_HG_WEB=1 pnpm build` output.
+//! * `HGHUB_WEB_PUBLIC_ORIGIN` (optional): 反代后的公网源站，如
+//!   `https://8900-xxx.instabox.tech`（不带末尾 `/hg`）。设了就用它改写 m3u8 里的
+//!   分片地址；不设则按请求头现算。反代会改写 Host 时必须设，否则改写出内网地址、手机播不了。
 
 #[path = "../../src-tauri/src/net.rs"]
 mod net;
@@ -60,6 +63,9 @@ struct AppState {
     dist_dir: PathBuf,
     password_hash: [u8; 32],
     sessions: Arc<Mutex<HashMap<String, Instant>>>,
+    /// 反代后的公网源站（如 https://8900-xxx.instabox.tech），用于 m3u8 改写。
+    /// 未设时按请求头现算：优先 X-Forwarded-Host/Proto，再退回 Host（http）。
+    public_origin: Option<String>,
 }
 
 fn sha256_hex(input: &str) -> [u8; 32] {
@@ -409,19 +415,26 @@ async fn api_dispatch(
 
 /* ───────────────────────── /hg/ 媒体代理 ───────────────────────── */
 
-async fn media_proxy(req: Request) -> Response {
+async fn media_proxy(State(state): State<AppState>, req: Request) -> Response {
     let uri = req.uri().clone();
     let path = uri.path().to_string(); // /hg/img | /hg/hls | /hg/seg
     let route = path.strip_prefix("/hg").unwrap_or(&path).to_string();
     let query = uri.query().unwrap_or("").to_string();
-    // m3u8 改写用的代理基址：按请求 Host 现算，localhost 与公网 IP/域名都对得上。
-    let host = req
-        .headers()
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("127.0.0.1:8900")
-        .to_string();
-    let origin = format!("http://{host}/hg");
+    // m3u8 改写用的代理基址。反代（如 InstaBox 公网端口）会把 Host 改写成本机地址，
+    // 只按 Host 现算会得到 http://127.0.0.1:8900，手机上播不了；因此：
+    // 1) HGHUB_WEB_PUBLIC_ORIGIN 已设时直接用它；2) 否则优先 X-Forwarded-Host/Proto；3) 再退回 Host。
+    let headers = req.headers();
+    let header_str = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    let origin = match &state.public_origin {
+        Some(o) => format!("{o}/hg"),
+        None => {
+            let host = header_str("x-forwarded-host")
+                .or_else(|| header_str(header::HOST.as_str()))
+                .unwrap_or("127.0.0.1:8900");
+            let scheme = header_str("x-forwarded-proto").unwrap_or("http");
+            format!("{scheme}://{host}/hg")
+        }
+    };
     let resp = media::handle(&route, &query, &origin).await;
     let status = StatusCode::from_u16(resp.status).unwrap_or(StatusCode::OK);
     let mut builder = Response::builder().status(status);
@@ -499,6 +512,10 @@ async fn main() {
         });
     let data_dir = PathBuf::from(std::env::var("HGHUB_WEB_DATA").unwrap_or_else(|_| "./data".into()));
     let dist_dir = PathBuf::from(std::env::var("HGHUB_WEB_DIST").unwrap_or_else(|_| "./dist".into()));
+    let public_origin = std::env::var("HGHUB_WEB_PUBLIC_ORIGIN")
+        .ok()
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty());
     std::fs::create_dir_all(&data_dir).expect("创建数据目录失败");
 
     net::bind_base(&data_dir);
@@ -512,6 +529,7 @@ async fn main() {
         dist_dir: dist_dir.clone(),
         password_hash,
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        public_origin,
     };
 
     let app = Router::new()
