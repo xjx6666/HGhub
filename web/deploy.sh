@@ -5,11 +5,14 @@
 # 开端口（VCN 安全列表放行 8900）是下一步，另行在控制台操作，本脚本不碰。
 set -euo pipefail
 
-REPO_DIR="$HOME/HGhub"
+# 安装前缀：默认 $HOME；在 InstaBox 上用 HGHUB_PREFIX=/data（/data 为持久盘，$HOME 是否持久未核实）。
+PREFIX="${HGHUB_PREFIX:-$HOME}"
+
+REPO_DIR="$PREFIX/HGhub"
 BRANCH="web/hghub-web-20261117"
 FORK="https://github.com/xjx6666/HGhub.git"
-BIN_DIR="$HOME/.local/bin"
-ENV_FILE="$HOME/.config/hghub-web.env"
+BIN_DIR="$PREFIX/.local/bin"
+ENV_FILE="$PREFIX/.config/hghub-web.env"
 
 echo "== 1/6 代码 =="
 if [ -d "$REPO_DIR/.git" ]; then
@@ -33,7 +36,7 @@ if ! command -v node >/dev/null 2>&1; then
     | tar -xJ -C "$HOME/.local/node" --strip-components=1
   export PATH="$HOME/.local/node/bin:$PATH"
 fi
-export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/node/bin:$PREFIX/.local/bin:$HOME/.local/bin:$PATH"
 node --version
 if ! command -v pnpm >/dev/null 2>&1; then
   corepack enable 2>/dev/null || npm install -g pnpm@10
@@ -76,6 +79,10 @@ fi
 
 mkdir -p "$HOME/.config/systemd/user"
 cp web/hghub-web.service "$HOME/.config/systemd/user/hghub-web.service"
+# 前缀不是 $HOME 时，把 unit 里的 %h 换成实际前缀（WorkingDirectory/EnvironmentFile/ExecStart/数据与前端目录）
+if [ "$PREFIX" != "$HOME" ]; then
+  sed -i "s|%h|$PREFIX|g" "$HOME/.config/systemd/user/hghub-web.service"
+fi
 systemctl --user daemon-reload
 systemctl --user enable hghub-web.service
 systemctl --user restart hghub-web.service
