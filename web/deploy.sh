@@ -93,5 +93,5 @@ sleep 3
 systemctl --user status hghub-web.service --no-pager | head -15
 echo "== 本地验通（只绑 127.0.0.1） =="
 curl -s -o /dev/null -w "登录页: %{http_code}\n" http://127.0.0.1:8900/login
-curl -s -o /dev/null -w "未登录首页: %{http_code}（应为 302 跳登录页）\n" http://127.0.0.1:8900/
+curl -s -o /dev/null -w "未登录首页: %{http_code}（应为 307 跳登录页）\n" http://127.0.0.1:8900/
 echo "本地通过后再去云控制台 VCN 安全列表放行 8900/TCP，然后按 web/README.md 的外网验真清单逐项核对。"
