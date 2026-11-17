@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { api, cover, fmt, fmtTime, isMobile } from "../api";
+import { api, cover, fmt, fmtTime, isMobile, setOrientation } from "../api";
 import type { Detail, Episode, Post, VideoCard } from "../types";
 import { useStore } from "../store";
 import { Avatar, Img, Sheet } from "./ui";
@@ -259,7 +258,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     setClean(false);
     setFs(true);
     if (isLandscapeVideo) {
-      invoke("set_orientation", { landscape: true }).catch(() => {});
+      setOrientation(true);
       try {
         (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.("landscape")?.catch(() => {});
       } catch { /* ignore */ }
@@ -270,14 +269,14 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     keepPlayingThroughTransition();
     setClean(false);
     setFs(false);
-    invoke("set_orientation", { landscape: false }).catch(() => {});
+    setOrientation(false);
     try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
   }, [setClean, setFs, keepPlayingThroughTransition]);
 
   /* 全屏状态下若视频宽高刚加载出来且为横屏，自动补发一次横屏指令 */
   useEffect(() => {
     if (!isDesktop && fs && isLandscapeVideo) {
-      invoke("set_orientation", { landscape: true }).catch(() => {});
+      setOrientation(true);
     }
   }, [isDesktop, fs, isLandscapeVideo]);
 

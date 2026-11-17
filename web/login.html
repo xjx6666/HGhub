@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HGhub">
+<title>HGhub · 登录</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: #fff; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+  .box { width: min(92vw, 340px); padding: 28px 24px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  p { color: #999; font-size: 14px; margin: 0 0 24px; }
+  input { width: 100%; padding: 13px 14px; font-size: 16px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; outline: none; }
+  input:focus { border-color: #e50914; }
+  button { width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; border: 0; border-radius: 10px; background: #e50914; color: #fff; }
+  button:disabled { opacity: .6; }
+  .err { color: #ff6b6b; font-size: 14px; min-height: 20px; margin-top: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>HGhub</h1>
+  <p>请输入网页版密码进入</p>
+  <form id="f">
+    <input id="pw" type="password" placeholder="密码" autocomplete="current-password" autofocus>
+    <button id="btn" type="submit">进入</button>
+    <div class="err" id="err"></div>
+  </form>
+</div>
+<script>
+  const f = document.getElementById("f");
+  const pw = document.getElementById("pw");
+  const btn = document.getElementById("btn");
+  const err = document.getElementById("err");
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.textContent = "";
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/web-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw.value }),
+      });
+      if (r.ok) { location.href = "/"; return; }
+      err.textContent = (await r.text()) || "登录失败";
+    } catch {
+      err.textContent = "连接失败，请稍后重试";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

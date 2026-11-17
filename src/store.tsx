@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { api, platform as envPlatform } from "./api";
+import { api, platform as envPlatform, setOrientation } from "./api";
 import { isStrictSecurity, setStrictSecurity as setHtmlStrictSecurity } from "./html";
 import type { User } from "./types";
 
@@ -264,7 +263,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFsState((prev) => {
       const next = typeof v === "function" ? (v as (p: boolean) => boolean)(prev) : v;
       if (!next) {
-        invoke("set_orientation", { landscape: false }).catch(() => {});
+        setOrientation(false);
         try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
       }
       return next;

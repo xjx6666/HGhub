@@ -22,11 +22,19 @@ export const platform: "android" | "ios" | "windows" | "macos" | "linux" =
 /** 移动端（安卓 / iOS）共用触屏界面 */
 export const isMobile = isAndroid || isIos;
 
+/** 网页版（VITE_HG_WEB=1 构建）：走 HTTP 服务，不走 Tauri IPC / hg:// 协议。 */
+export const WEB = import.meta.env.VITE_HG_WEB === "1";
+
 /** 自定义协议地址随平台不同（见 tauri `register_asynchronous_uri_scheme_protocol` 文档）：
  *  Windows / Android → `http://<scheme>.localhost`
  *  macOS / iOS / Linux → `<scheme>://localhost`
- *  Rust 侧 `src-tauri/src/lib.rs` 里改写 m3u8 用的 scheme 必须与此一致。 */
-export const LOCAL = isMacos || isIos || isLinux ? "hg://localhost" : "http://hg.localhost";
+ *  Rust 侧 `src-tauri/src/lib.rs` 里改写 m3u8 用的 scheme 必须与此一致。
+ *  网页版 → 同源 `/hg` 代理（axum 服务）。 */
+export const LOCAL = WEB
+  ? `${location.origin}/hg`
+  : isMacos || isIos || isLinux
+    ? "hg://localhost"
+    : "http://hg.localhost";
 
 /** src 是否已是本地协议地址（避免在详情页把代理地址再包一层） */
 export const isLocalMedia = (src: string) => src.startsWith(`${LOCAL}/`);
@@ -40,11 +48,36 @@ export const playlist = (url: string) => `${LOCAL}/hls?u=${encodeURIComponent(ur
 
 /* ── 调用封装 ───────────────────────────────────────────── */
 
+/** 网页版调用：POST /api/<cmd>，与桌面版 invoke 同形状（成功返 JSON，失败抛 Error）。 */
+async function webCall<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const r = await fetch(`/api/${cmd}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args ?? {}),
+    credentials: "same-origin",
+  });
+  if (r.status === 401) {
+    location.href = "/login";
+    throw new Error("请先登录");
+  }
+  if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+  return (await r.json()) as T;
+}
+
 /** 写一行到应用数据目录 debug.log（用户反馈「打不开」时要的就是它） */
-export const logLine = (msg: string) => invoke("debug_log", { msg }).catch(() => {});
+export const logLine = (msg: string) => {
+  if (WEB) webCall("debug_log", { msg }).catch(() => {});
+  else invoke("debug_log", { msg }).catch(() => {});
+};
+
+/** 切换移动端屏幕方向：网页版无原生旋转，直接成功；Safari 用 Screen Orientation API（见 Feed 的 screen.orientation 调用）。 */
+export const setOrientation = (landscape: boolean) => {
+  if (!WEB) invoke("set_orientation", { landscape }).catch(() => {});
+};
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
+    if (WEB) return await webCall<T>(cmd, args);
     return (await invoke(cmd, args)) as T;
   } catch (e) {
     const msg = typeof e === "string" ? e : "请求失败，请检查网络";
@@ -97,10 +130,10 @@ export const api = {
   commentSend: (id: number, ep: number, text: string, replyId?: number) =>
     call<unknown>("api_comment_send", { id, ep, text, replyId: replyId ?? null }),
 
-  clearCache: () => invoke<void>("cache_clear"),
-  netDiag: () => invoke<Record<string, unknown>>("net_diag"),
-  postLike: (id: number, on: boolean) => invoke<unknown>("api_post_like", { id, on }),
-  postCollect: (id: number, on: boolean) => invoke<unknown>("api_post_collect", { id, on }),
+  clearCache: () => call<void>("cache_clear"),
+  netDiag: () => call<Record<string, unknown>>("net_diag"),
+  postLike: (id: number, on: boolean) => call<unknown>("api_post_like", { id, on }),
+  postCollect: (id: number, on: boolean) => call<unknown>("api_post_collect", { id, on }),
   postComments: (id: number, page: number, size: number) => call<CommentPage>("api_post_comments", { id, page, size }),
   like: (id: number, ep: number, on: boolean) => call<unknown>("api_like", { id, ep, on }),
   collect: (id: number, on: boolean) => call<unknown>("api_collect", { id, on }),
@@ -114,7 +147,13 @@ export const api = {
 
   /* 更新检查：对比 GitHub Release 的 tag */
   checkUpdate: () => call<UpdateInfo>("check_update"),
-  openUrl: (url: string) => call<void>("open_url", { url }),
+  openUrl: async (url: string) => {
+    if (WEB) {
+      window.open(url, "_blank");
+      return;
+    }
+    await call<void>("open_url", { url });
+  },
 };
 
 /* ── 更新检查 ───────────────────────────────────────────── */

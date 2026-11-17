@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore, type Page, type Tab } from "./store";
-import { isMobile, selfTest } from "./api";
+import { isMobile, logLine, selfTest, WEB } from "./api";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { runBack } from "./back";
 import Home from "./pages/Home";
@@ -245,7 +245,7 @@ export default function App() {
     if (loginOpen) { setLoginOpen(false); return; }
     if (stack.length) { pop(); return; }
     if (tab !== "home") { setTab("home"); return; }
-    invoke("plugin:app|exit", { code: 0 }).catch(() => {});
+    if (!WEB) invoke("plugin:app|exit", { code: 0 }).catch(() => {});
   };
 
   useEffect(() => {
@@ -270,7 +270,7 @@ export default function App() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const t = window.setTimeout(() => {
-      selfTest().then((r) => { invoke("debug_log", { msg: r }).catch(() => {}); }).catch(() => {});
+      selfTest().then((r) => { logLine(r); }).catch(() => {});
     }, 2500);
     return () => window.clearTimeout(t);
   }, []);

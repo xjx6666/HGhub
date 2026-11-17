@@ -1,0 +1,42 @@
+[package]
+name = "hghub-web"
+version = "1.2.1"
+edition = "2021"
+rust-version = "1.90"
+description = "HGhub web server: reuses the desktop Rust core (api/net/media/session) behind an axum HTTP service with a password gate, for iPhone Safari use."
+license = "PolyForm-Noncommercial-1.0.0"
+
+[[bin]]
+name = "hghub-web"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "fs", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+rand = "0.9"
+# NOTE: no `tauri` dep on purpose — tauri 2.12 pulls muda/GTK (atk-sys) even
+# with default-features=false. The two tauri-coupled core modules are
+# vendored as web-local copies (web/src/media_web.rs, web/src/playback_log_web.rs).
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  # Load OS roots too (in addition to webpki): the sandbox/server egress may
+  # present a locally-trusted MITM CA that webpki roots don't cover.
+  "rustls-tls-native-roots",
+  "system-proxy",
+  "gzip",
+  "brotli",
+  "json",
+  "charset",
+] }
+aes = "0.8"
+base64 = "0.22"
+percent-encoding = "2"
+once_cell = "1"
+url = "2"
+time = { version = "0.3", features = ["formatting"] }
+
+[profile.release]
+opt-level = 2

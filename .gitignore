@@ -31,3 +31,6 @@ docs/API.md
 
 # Agent instructions (local)
 AGENTS.md
+
+# 网页版后端构建产物
+web/target/

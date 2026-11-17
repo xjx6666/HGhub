@@ -1,0 +1,18 @@
+[Unit]
+Description=HGhub web server (iPhone Safari)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/HGhub
+EnvironmentFile=%h/.config/hghub-web.env
+Environment=HGHUB_WEB_BIND=127.0.0.1:8900
+Environment=HGHUB_WEB_DATA=%h/.local/share/hghub-web
+Environment=HGHUB_WEB_DIST=%h/HGhub/dist
+ExecStart=%h/.local/bin/hghub-web
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

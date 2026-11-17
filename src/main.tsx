@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppProvider } from "./store";
-import { invoke } from "@tauri-apps/api/core";
+import { logLine } from "./api";
 import "./index.css";
 import { initPlaybackLog, installPlaybackPageEvents } from "./playbackDiagnostics";
 
@@ -11,7 +11,7 @@ void initPlaybackLog();
 
 /* 运行期错误统一落到 debug.log，便于自查 */
 function report(kind: string, msg: string) {
-  invoke("debug_log", { msg: `[${kind}] ${msg}` }).catch(() => {});
+  logLine(`[${kind}] ${msg}`);
 }
 window.addEventListener("error", (e) => {
   report("error", `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
