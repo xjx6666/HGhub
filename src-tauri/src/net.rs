@@ -1,7 +1,8 @@
 //! 网络层：与上游站点对话。
 //!
-//! 站点把全部 `/api/**` 调用收敛成 `POST /api/edge/request` 的信封，
-//! 我们只实现这一个入口，其余接口都是「填 path」。
+//! 上游曾把全部 `/api/**` 调用收敛成 `POST /api/edge/request` 的信封；
+//! 2026-11-24 该中继停用（全部线路返回「接口已停用」），直连 API 仍可用，
+//! 现改为直连 `{origin}{path}`，其余接口都是「填 path」。
 //!
 //! # 代理（用户反馈「浏览器能开、HGhub 打不开」的根因就在这里）
 //!
@@ -20,8 +21,6 @@
 //! `net_diag` 命令会输出 DNS/HTTP/环境变量快照。
 
 use crate::network_policy;
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -451,7 +450,7 @@ fn edge_operation(path: &str) -> &'static str {
     }
 }
 
-/// 仅无请求体、无凭据的逻辑 GET 可以迁移网关；信封本身仍使用 POST。
+/// 仅无请求体、无凭据的逻辑 GET 可以迁移网关；重定向时原样重发同一请求。
 fn edge_redirect_target(
     current: &url::Url,
     status: u16,
@@ -464,7 +463,8 @@ fn edge_redirect_target(
     network_policy::redirect_target(current, location)
 }
 
-/// 业务请求：走边缘信封。
+/// 业务请求：直连上游 `{origin}{path}`。
+/// 2026-11-24 上游停用 /api/edge/request 中继（全部线路返回「接口已停用」），故不再走信封。
 pub async fn edge(
     origin: &str,
     method: &str,
@@ -483,21 +483,9 @@ pub async fn edge(
     {
         return Err("镜像线路仅供游客浏览；登录/注册请切换到固定线路".into());
     }
-    let (encoded, ctype) = match &body {
-        Some(v) => (
-            B64.encode(serde_json::to_vec(v).map_err(|e| e.to_string())?),
-            "application/json",
-        ),
-        None => (String::new(), ""),
-    };
-    let envelope = json!({
-        "method": method,
-        "path": path,
-        "body": encoded,
-        "content_type": ctype,
-    });
-
-    let url = format!("{cur}/api/edge/request");
+    let http_method =
+        reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "不支持的请求方法".to_string())?;
+    let url = format!("{cur}{path}");
     let referer = format!("{cur}/");
     let token = token.map(|s| s.to_string());
 
@@ -517,7 +505,8 @@ pub async fn edge(
     let value = with_retry(can_retry, || {
         attempt += 1;
         let attempt = attempt;
-        let envelope = envelope.clone();
+        let body = body.clone();
+        let http_method = http_method.clone();
         let token = token.clone();
         let url = url.clone();
         let referer = referer.clone();
@@ -536,10 +525,12 @@ pub async fn edge(
                     let (target, client) = client_for(next.as_str()).await?;
                     target_host = target.host_str().unwrap_or("").to_string();
                     let mut req = client
-                        .post(target.clone())
+                        .request(http_method.clone(), target.clone())
                         .header("Accept", "application/json")
-                        .header("Referer", &referer)
-                        .json(&envelope);
+                        .header("Referer", &referer);
+                    if let Some(v) = &body {
+                        req = req.json(v);
+                    }
                     if let Some(t) = token.as_deref() {
                         if !t.is_empty() {
                             req = req.header("Authorization", format!("Bearer {t}"));
@@ -552,7 +543,7 @@ pub async fn edge(
                     let ctype = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
                     response_kind = if ctype.contains("json") { "json" } else if ctype.contains("html") { "html" } else { "other" };
                     gateway = if resp.headers().contains_key("x-amz-cf-id") { "cloudfront" } else if resp.headers().contains_key("cf-ray") { "cloudflare" } else { "other" };
-                    // 逐跳重建并检查客户端；不自动把信封 POST 改成无信封 GET。
+                    // 逐跳重建并检查客户端；重定向时原样重发同一请求（仅放行无请求体、无凭据的逻辑 GET）。
                     if status.is_redirection() {
                         if hop == 5 {
                             return Err("重定向次数超过限制".into());
@@ -860,6 +851,28 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.contains("禁止访问"));
+    }
+
+    /// 手动跑：`cargo test --release --manifest-path web/Cargo.toml -- --ignored net::tests::direct_feed_bypasses_disabled_relay -- --nocapture`
+    /// 2026-11-24 上游停用 /api/edge/request 中继（全部线路返回「接口已停用」），
+    /// 直连 API 仍可用；改动前此测试失败（接口已停用），改动后通过。
+    #[tokio::test]
+    #[ignore = "联网测试：直连上游 feed，手动用 --ignored 运行"]
+    async fn direct_feed_bypasses_disabled_relay() {
+        let v = edge(
+            "https://huangguoai.com",
+            "GET",
+            "/api/videos?page=1&size=5",
+            None,
+            None,
+        )
+        .await
+        .expect("直连 feed 应返回数据");
+        let items = v
+            .get("items")
+            .and_then(|x| x.as_array())
+            .expect("feed data 应含 items 数组");
+        assert!(!items.is_empty(), "feed items 不应为空");
     }
 
     /// 手动跑：`cargo test --lib -- --ignored net::tests::diag -- --nocapture`
